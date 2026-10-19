@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Garden" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/app_launch_background</item>
+        <item name="android:colorAccent">#46B5C9</item>
+        <item name="android:windowSplashScreenBackground">@color/app_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cnblogs_mark_vector</item>
+    </style>
+</resources>
