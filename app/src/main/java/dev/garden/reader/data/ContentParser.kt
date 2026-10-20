@@ -26,7 +26,7 @@ object ContentParser {
 
     fun cleanBody(html: String, url: String): String {
         val body = Jsoup.parseBodyFragment(html, url).body()
-        val allow = Safelist.relaxed().addTags("hr").addAttributes("code", "class")
+        val allow = Safelist.relaxed().addTags("hr").addAttributes("code", "class").addAttributes("pre", "class")
             .removeProtocols("img", "src", "http").addProtocols("img", "src", "https")
         body.select("img").forEach {
             val source = it.attr("data-original").ifBlank { it.attr("data-src") }.ifBlank { it.attr("src") }

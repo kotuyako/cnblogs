@@ -8,7 +8,7 @@ import org.jsoup.nodes.TextNode
 data class NativeSpan(val text: String, val bold: Boolean = false, val italic: Boolean = false,
     val code: Boolean = false, val link: String? = null)
 data class NativeBlock(val kind: String, val spans: List<NativeSpan> = emptyList(),
-    val level: Int = 0, val source: String? = null, val caption: String = "") {
+    val level: Int = 0, val source: String? = null, val caption: String = "", val language: String = "") {
     val text: String get() = spans.joinToString("") { it.text }
 }
 
@@ -36,7 +36,10 @@ object NativeDocument {
                     }
                 }
                 tag == "pre" -> {
-                    flush(); result += NativeBlock("code", listOf(NativeSpan(node.wholeText(), code = true)))
+                    val classes = (node.classNames() + node.selectFirst("code")?.classNames().orEmpty())
+                    val language = classes.firstOrNull { it.startsWith("language-") || it.startsWith("lang-") }
+                        ?.substringAfter('-')?.take(30).orEmpty()
+                    flush(); result += NativeBlock("code", listOf(NativeSpan(node.wholeText(), code = true)), language = language)
                 }
                 tag == "table" -> {
                     flush()

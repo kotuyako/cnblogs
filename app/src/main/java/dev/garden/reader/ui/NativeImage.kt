@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -87,7 +88,8 @@ fun NativeAvatar(url: String?, name: String, modifier: Modifier = Modifier, onCl
         val photo = bitmap
         if (photo != null) Image(photo.asImageBitmap(), "$name 的头像",
             Modifier.fillMaxSize().padding(3.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-        else Text(name.take(1).ifBlank { "园" }, Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
+        else Icon(Icons.Outlined.AccountCircle, "$name 的默认头像", Modifier.align(Alignment.Center).fillMaxSize().padding(4.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

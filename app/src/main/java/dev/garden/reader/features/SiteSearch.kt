@@ -11,10 +11,11 @@ import java.net.URI
 import java.net.URLEncoder
 
 class SiteSearch(private val account: GardenAccountSession) {
-    suspend fun search(query: String, news: Boolean, page: Int): List<Article> {
+    suspend fun search(query: String, news: Boolean, page: Int, category: String = if (news) "News" else "Blog"): List<Article> {
+        require(category in setOf("Blog", "News", "Kb"))
         require(query.trim().length in 1..100) { "搜索词应为 1～100 字" }
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-        val value = JSONTokener(account.apiRequest("/ZzkDocuments/${if (news) "News" else "Blog"}?keyWords=$encoded&pageIndex=$page")).nextValue()
+        val value = JSONTokener(account.apiRequest("/ZzkDocuments/$category?keyWords=$encoded&pageIndex=$page")).nextValue()
         val rows = when (value) {
             is JSONArray -> value
             is JSONObject -> listOf("Documents", "documents", "Data", "data", "Items", "items")
@@ -27,7 +28,7 @@ class SiteSearch(private val account: GardenAccountSession) {
             val url = field("Uri", "uri", "Url", "url", "LinkUrl").replaceFirst("http://", "https://")
             if (!ContentParser.isCnblogsUrl(url)) return@mapNotNull null
             val host = URI(url).host
-            if (news && host != "news.cnblogs.com" || !news && host !in listOf("www.cnblogs.com", "cnblogs.com")) return@mapNotNull null
+            if (category == "News" && host != "news.cnblogs.com" || category == "Blog" && host !in listOf("www.cnblogs.com", "cnblogs.com") || category == "Kb" && host != "kb.cnblogs.com") return@mapNotNull null
             fun count(vararg keys: String) = field(*keys).toIntOrNull()
             Article(url, Jsoup.parse(field("Title", "title")).text(), field("Author", "author", "UserName", "userName"),
                 Jsoup.parse(field("Content", "content", "Summary", "summary", "Description", "description")).text().take(1000),

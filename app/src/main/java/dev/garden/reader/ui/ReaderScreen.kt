@@ -44,7 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit, onLogin: () -> Unit) {
+fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit, onLogin: () -> Unit,
+    onAuthor: (dev.garden.reader.data.Article) -> Unit = {}, visible: Boolean = true) {
     val article = state.selected ?: return
     val account by model.account.state.collectAsStateWithLifecycle()
     val backdrop = rememberGlassBackdrop()
@@ -59,6 +60,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
     val blocks by produceState<List<NativeBlock>>(emptyList(), state.body) {
         value = withContext(Dispatchers.Default) { state.body?.let(NativeDocument::parse).orEmpty() }
     }
+    TrackReading(article.url, visible && !state.bodyLoading && state.bodyError == null && blocks.isNotEmpty() && !toc && !settings && !comments)
     LaunchedEffect(scroll) {
         var previous = 0
         snapshotFlow { scroll.firstVisibleItemIndex * 100000 + scroll.firstVisibleItemScrollOffset }.collect { current ->
@@ -82,7 +84,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
                     }
                     Row(Modifier.padding(start = 22.dp, end = 22.dp, top = 22.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        NativeAvatar(article.avatar, article.author, Modifier.size(42.dp))
+                        NativeAvatar(article.avatar, article.author, Modifier.size(42.dp)) { onAuthor(article) }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(article.author, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Text(article.published.take(25), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -119,13 +121,6 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
         }
         EdgeVeil(backdrop, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .height(160.dp + bottomInset))
-        if (blocks.any { it.kind == "heading" }) {
-            GlassPanel(Modifier.align(Alignment.CenterEnd), backdrop, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
-                onClick = { toc = true }) {
-                Text("目\n录\n·\n·\n·", Modifier.padding(horizontal = 8.dp, vertical = 14.dp), fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
         AnimatedVisibility(chrome, Modifier.align(Alignment.BottomCenter), enter = fadeIn() + slideInVertically { it },
             exit = fadeOut() + slideOutVertically { it }) {
             GlassPanel(Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp)
@@ -139,7 +134,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
                     GlassIconButton(Icons.Outlined.IosShare, "分享", { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${article.title}\n${article.url}")
                     }, "分享文章")) }, backdrop = backdrop)
-                    GlassIconButton(Icons.Outlined.MoreHoriz, "目录与更多", { toc = true }, backdrop = backdrop)
+                    GlassIconButton(Icons.Outlined.FormatListBulleted, "文章目录", { toc = true }, backdrop = backdrop)
                 }
             }
         }
@@ -155,7 +150,9 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
                 item { GlassButton("阅读字号", { toc = false; settings = true }, backdrop = backdrop) }
             }
         }
-        if (comments) CommentsSheet(article, model.account, backdrop, onLogin, { comments = false })
+        if (comments) PredictiveGlassLayer(onDismiss = { comments = false }) { back ->
+            CommentsSheet(article, model.account, backdrop, onLogin, back)
+        }
         if (settings) GlassSheet("阅读字号", backdrop, { settings = false }) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -172,6 +169,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
 @Composable
 internal fun NativeArticleBlock(block: NativeBlock, fontSize: Float, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
+    if (block.kind == "code") { NativeCodeBlock(block, fontSize, modifier); return }
     if (block.kind == "image") {
         NativeImage(block.source ?: return, block.caption.ifBlank { "文章配图" }, modifier.clip(RoundedCornerShape(5.dp)))
         return

@@ -7,7 +7,7 @@ import org.json.JSONObject
 object ReleaseUpdates {
     // Set only after the owner selects and authorizes the real publication repository.
     const val REPOSITORY = "kotuyako/cnblogs"
-    const val VERSION = "1.4.0"
+    const val VERSION = "1.5.0"
     data class Result(val message: String, val url: String? = null)
     suspend fun check(): Result = withContext(Dispatchers.IO) {
         check(REPOSITORY.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) { "尚未配置 GitHub 发布仓库，不能确认是否有更新。" }

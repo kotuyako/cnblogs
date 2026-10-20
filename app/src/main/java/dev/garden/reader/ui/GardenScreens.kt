@@ -3,6 +3,9 @@ package dev.garden.reader.ui
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -46,7 +49,7 @@ import dev.garden.reader.data.Channel
 
 @Composable
 fun GardenHome(state: GardenState, model: GardenViewModel, account: AccountState, onLogin: () -> Unit,
-    modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier, onAuthor: (Article) -> Unit = {}) {
     var destination by rememberSaveable { mutableIntStateOf(0) }
     var category by rememberSaveable { mutableStateOf(Channel.HOME) }
     var homeQuery by rememberSaveable { mutableStateOf("") }
@@ -58,6 +61,18 @@ fun GardenHome(state: GardenState, model: GardenViewModel, account: AccountState
     val newsScroll = rememberLazyListState()
     val savedScroll = rememberLazyListState()
     val settingsScroll = rememberLazyListState()
+    var headerVisible by remember { mutableStateOf(true) }
+    val headerShift by animateDpAsState(if (destination == 0 && !headerVisible) (-142).dp else 0.dp,
+        spring(dampingRatio = .9f, stiffness = 450f), label = "home toolbar collapse")
+    LaunchedEffect(destination, homeScroll) {
+        headerVisible = true
+        var previous = homeScroll.firstVisibleItemIndex * 100000 + homeScroll.firstVisibleItemScrollOffset
+        snapshotFlow { homeScroll.firstVisibleItemIndex * 100000 + homeScroll.firstVisibleItemScrollOffset }.collect { current ->
+            if (current < 40 || current < previous - 8) headerVisible = true
+            else if (current > previous + 8) headerVisible = false
+            previous = current
+        }
+    }
     val ambient = rememberGlassBackdrop()
     val content = rememberGlassBackdrop()
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -80,14 +95,15 @@ fun GardenHome(state: GardenState, model: GardenViewModel, account: AccountState
             } else {
                 FeedList(state, model, destination, desiredChannel, query,
                     when (destination) { 1 -> newsScroll; 2 -> savedScroll; else -> homeScroll }, ambient,
-                    topInset + if (destination == 0) 135.dp else 83.dp, bottomInset + 120.dp)
+                    topInset + if (destination == 0) 135.dp else 83.dp, bottomInset + 120.dp, onAuthor)
             }
         }
         // The veil begins at y=0, including the status bar. Controls float above the same feathered layer.
         EdgeVeil(content, true, Modifier.align(Alignment.TopCenter).fillMaxWidth()
-            .height(topInset + if (destination == 0) 164.dp else 112.dp))
+            .height(topInset + if (destination == 0) (164.dp + headerShift).coerceAtLeast(22.dp) else 112.dp))
         EdgeVeil(content, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottomInset + 160.dp))
-        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding()
+        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().graphicsLayer { translationY = headerShift.toPx() }
+            .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
             Row(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (destination == 3) {
@@ -106,20 +122,18 @@ fun GardenHome(state: GardenState, model: GardenViewModel, account: AccountState
                         { searching = true }, backdrop = content)
                 }
             }
-            if (destination == 0) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Channel.entries.filter { it != Channel.NEWS }.forEach { channel ->
-                    GlassButton(channel.label, { category = channel }, backdrop = content, selected = category == channel)
-                }
+            if (destination == 0) {
+                val channels = Channel.entries.filter { it != Channel.NEWS }
+                GlassSegments(channels.map { it.label }, channels.indexOf(category), { category = channels[it] }, content,
+                    Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp).fillMaxWidth())
             }
         }
         if (!keyboard) FloatingNavigation(destination, { destination = it }, content,
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .padding(horizontal = 18.dp, vertical = 10.dp).widthIn(max = 560.dp))
-        if (searching && destination == 2) SearchGlass(query, setQuery, { searching = false }, content, "搜索本地收藏")
-        if (searching && destination <= 1) PredictiveGlassLayer(onDismiss = { searching = false }) { back ->
-            SiteSearchScreen(destination == 1, model, onLogin, back)
+        if (searching && destination <= 2) PredictiveGlassLayer(onDismiss = { searching = false }) { back ->
+            SiteSearchScreen(destination == 1, model, onLogin, back, saved = destination == 2, onAuthor = onAuthor)
         }
         settingsPage?.let { page ->
             key(page) { PredictiveGlassLayer(onDismiss = { settingsPage = null }) { back ->
@@ -155,7 +169,8 @@ internal fun FloatingNavigation(destination: Int, select: (Int) -> Unit, backdro
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FeedList(state: GardenState, model: GardenViewModel, destination: Int, channel: Channel, query: String,
-    scroll: LazyListState, backdrop: GlassBackdrop, top: androidx.compose.ui.unit.Dp, bottom: androidx.compose.ui.unit.Dp) {
+    scroll: LazyListState, backdrop: GlassBackdrop, top: androidx.compose.ui.unit.Dp, bottom: androidx.compose.ui.unit.Dp,
+    onAuthor: (Article) -> Unit) {
     val saved = destination == 2
     val matches = state.channel == channel
     val source = if (saved) state.bookmarks else if (matches) state.articles else emptyList()
@@ -191,7 +206,7 @@ private fun FeedList(state: GardenState, model: GardenViewModel, destination: In
             }
             items(articles, key = { it.url }) { article ->
                 ArticleGlassCard(article, state.bookmarks.any { it.url == article.url }, backdrop,
-                    { model.open(article) }, { model.bookmark(article) })
+                    { model.open(article) }, { model.bookmark(article) }, { onAuthor(article) })
             }
             if (!saved && state.hasMore && query.isBlank()) item {
                 GlassButton(if (state.loadingMore) "正在读取下一页…" else "加载下一页", model::more,
@@ -206,7 +221,8 @@ private fun FeedList(state: GardenState, model: GardenViewModel, destination: In
 }
 
 @Composable
-private fun ArticleGlassCard(article: Article, saved: Boolean, backdrop: GlassBackdrop, open: () -> Unit, bookmark: () -> Unit) {
+internal fun ArticleGlassCard(article: Article, saved: Boolean, backdrop: GlassBackdrop, open: () -> Unit,
+    bookmark: (() -> Unit)?, author: (() -> Unit)? = null) {
     GlassPanel(Modifier.fillMaxWidth(), backdrop, RoundedCornerShape(28.dp), onClick = open) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(article.title, fontSize = 20.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold,
@@ -220,10 +236,10 @@ private fun ArticleGlassCard(article: Article, saved: Boolean, backdrop: GlassBa
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                NativeAvatar(article.avatar, article.author, Modifier.size(30.dp))
+                NativeAvatar(article.avatar, article.author, Modifier.size(30.dp), onClick = author)
                 Text(article.author, Modifier.weight(1f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 ArticleStatistics(article)
-                GlassIconButton(if (saved) Icons.Outlined.BookmarkAdded else Icons.Outlined.BookmarkBorder,
+                if (bookmark != null) GlassIconButton(if (saved) Icons.Outlined.BookmarkAdded else Icons.Outlined.BookmarkBorder,
                     if (saved) "取消收藏" else "收藏", bookmark, Modifier.size(38.dp), backdrop, saved)
             }
         }
@@ -295,9 +311,10 @@ private fun SettingsList(account: AccountState, backdrop: GlassBackdrop, scroll:
             SettingRow(Icons.Outlined.Tune, "通用", "主题与沉浸显示", { open("通用") }); GroupDivider()
             SettingRow(Icons.Outlined.Palette, "外观", "液态玻璃与莫奈取色", { open("外观") }); GroupDivider()
             SettingRow(Icons.AutoMirrored.Outlined.MenuBook, "阅读", "字号、排版与手势", { open("阅读") }); GroupDivider()
+            SettingRow(Icons.Outlined.Insights, "阅读时间", "本机阅读时长与热力图", { open("阅读统计") }); GroupDivider()
             SettingRow(Icons.Outlined.NotificationsNone, "新文章通知", "后台定时检查与通知权限", { open("通知") }); GroupDivider()
-            SettingRow(Icons.Outlined.SystemUpdate, "检查更新", "当前版本 1.4.0", { open("检查更新") }); GroupDivider()
-            SettingRow(Icons.Outlined.Info, "关于", "博客园 1.4.0 · 非官方客户端", { open("关于") })
+            SettingRow(Icons.Outlined.SystemUpdate, "检查更新", "当前版本 1.5.0", { open("检查更新") }); GroupDivider()
+            SettingRow(Icons.Outlined.Info, "关于", "博客园 1.5.0 · 非官方客户端", { open("关于") })
         } }
     }
 }
@@ -315,6 +332,7 @@ private fun SettingsDetail(page: String, state: GardenState, model: GardenViewMo
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = top + 110.dp, bottom = bottom + 40.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp)) {
             item { Text(page, Modifier.padding(start = 4.dp, top = 12.dp, bottom = 14.dp), fontSize = 36.sp, fontWeight = FontWeight.Bold) }
+            if (page == "阅读统计") item { ReadingStatistics(ambient) }
             if (page in listOf("通用", "外观")) {
                 item { SectionLabel("外观") }
                 item { GlassGroup(ambient) {
@@ -372,7 +390,7 @@ private fun SettingsDetail(page: String, state: GardenState, model: GardenViewMo
             if (page == "关于") {
                 item { GlassGroup(ambient) { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     CnblogsMark(Modifier.size(64.dp))
-                    Text("博客园 1.4.0", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("博客园 1.5.0", fontSize = 23.sp, fontWeight = FontWeight.Bold)
                     Text("Kotlin · Jetpack Compose · 全原生阅读", fontSize = 13.sp)
                     Text("博客园第三方客户端，与博客园官方无关联。图标取自博客园官网资源，图标与文章版权归其权利人所有。",
                         fontSize = 13.sp, lineHeight = 23.sp)

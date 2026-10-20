@@ -23,6 +23,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.garden.reader.ui.*
 import dev.garden.reader.data.Article
 import dev.garden.reader.data.ContentParser
+import dev.garden.reader.features.AuthorRef
 
 class MainActivity : ComponentActivity() {
     private var notificationArticle by mutableStateOf<Article?>(null)
@@ -66,6 +67,13 @@ fun GardenApp(model: GardenViewModel = viewModel(), notificationArticle: Article
     GardenTheme(theme = state.theme, dynamicColor = state.dynamicColor) {
         var launched by rememberSaveable { mutableStateOf(false) }
         var showLogin by rememberSaveable { mutableStateOf(false) }
+        var author by remember { mutableStateOf<AuthorRef?>(null) }
+        var authorOrigin by remember { mutableStateOf<GardenState?>(null) }
+        var authorDetail by remember { mutableStateOf(false) }
+        val openAuthor: (Article) -> Unit = { article -> AuthorRef.from(article)?.let {
+            authorOrigin = state; authorDetail = false; author = it
+        } }
+        val baseState = authorOrigin ?: state
         LaunchedEffect(account.loggedIn) {
             if (account.loggedIn && showLogin) {
                 showLogin = false
@@ -74,16 +82,32 @@ fun GardenApp(model: GardenViewModel = viewModel(), notificationArticle: Article
         }
         Box(Modifier.fillMaxSize()) {
             GardenHome(state, model, account, onLogin = { showLogin = true },
-                modifier = if (state.selected != null || showLogin) Modifier.clearAndSetSemantics { } else Modifier)
-            state.selected?.let { article ->
+                modifier = if (state.selected != null || author != null || showLogin) Modifier.clearAndSetSemantics { } else Modifier,
+                onAuthor = openAuthor)
+            baseState.selected?.let { article ->
                 key(article.url) {
-                    PredictiveGlassLayer(onDismiss = model::close, enabled = !showLogin) { back ->
+                    PredictiveGlassLayer(onDismiss = model::close, enabled = !showLogin && author == null) { back ->
                         Box(if (showLogin) Modifier.clearAndSetSemantics { } else Modifier) {
-                            ReaderScreen(state, model, back, onLogin = { showLogin = true })
+                            ReaderScreen(baseState, model, back, onLogin = { showLogin = true }, onAuthor = openAuthor,
+                                visible = author == null && !showLogin && launched)
                         }
                     }
                 }
             }
+            author?.let { person -> key(person.blog) {
+                PredictiveGlassLayer(onDismiss = {
+                    val origin = authorOrigin?.selected
+                    if (origin != null) model.open(origin) else model.close()
+                    author = null; authorOrigin = null; authorDetail = false
+                }, enabled = !showLogin && !authorDetail) { back ->
+                    AuthorScreen(person, { model.open(it); authorDetail = true }, back)
+                }
+                if (authorDetail && state.selected != null) key(state.selected!!.url) {
+                    PredictiveGlassLayer(onDismiss = { authorDetail = false }, enabled = !showLogin) { back ->
+                        ReaderScreen(state, model, back, { showLogin = true }, openAuthor, !showLogin && launched)
+                    }
+                }
+            } }
             if (showLogin) {
                 PredictiveGlassLayer(onDismiss = { showLogin = false }) { back ->
                     AccountLoginScreen(model.account, onBack = back)
