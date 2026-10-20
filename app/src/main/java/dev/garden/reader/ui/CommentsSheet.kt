@@ -81,13 +81,13 @@ internal fun CommentsSheet(article: Article, account: GardenAccountSession, back
                 }
             }
             if (target != null) item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassButton("刷新评论", { load(true) }, backdrop = content, enabled = !loading && !posting)
-                if (more) GlassButton("下一页", { load(false) }, backdrop = content, enabled = !loading && !posting)
+                GlassButton("刷新评论", { load(true) }, backdrop = backdrop, enabled = !loading && !posting)
+                if (more) GlassButton("下一页", { load(false) }, backdrop = backdrop, enabled = !loading && !posting)
             } }
             if (!identity.loggedIn && target != null) item {
                 GlassPanel(Modifier.fillMaxWidth(), backdrop) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("公开评论无需登录；发表评论或公开读取受限时，需要官方 API 授权。")
-                    GlassButton("原生授权", onLogin, backdrop = content)
+                    GlassButton("原生授权", onLogin, backdrop = backdrop)
                 } }
             }
             if (identity.loggedIn && target != null) item {
@@ -108,7 +108,7 @@ internal fun CommentsSheet(article: Article, account: GardenAccountSession, back
                                 finally { posting = false }
                             }
                         }
-                    }, Modifier.fillMaxWidth(), content, selected = true, enabled = !posting && !loading && draft.isNotBlank())
+                    }, Modifier.fillMaxWidth(), backdrop, selected = true, enabled = !posting && !loading && draft.isNotBlank())
                 } }
             }
         }

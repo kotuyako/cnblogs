@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AuthorScreen(author: AuthorRef, open: (Article) -> Unit, back: () -> Unit) {
     val backdrop = rememberGlassBackdrop(); val scope = rememberCoroutineScope()
+    val ambient = rememberGlassBackdrop()
     var articles by remember(author.blog) { mutableStateOf(emptyList<Article>()) }
     var loading by remember { mutableStateOf(false) }; var page by remember { mutableIntStateOf(0) }
     var more by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
@@ -36,15 +37,16 @@ fun AuthorScreen(author: AuthorRef, open: (Article) -> Unit, back: () -> Unit) {
     val top = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
     val bottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LiquidBackdrop(Modifier.fillMaxSize().recordGlassBackdrop(ambient))
         LazyColumn(Modifier.fillMaxSize().recordGlassBackdrop(backdrop).background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = top + 90.dp, bottom = bottom + 80.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { GlassPanel(Modifier.fillMaxWidth(), backdrop) { Row(Modifier.padding(22.dp), verticalAlignment = Alignment.CenterVertically,
+            item { GlassPanel(Modifier.fillMaxWidth(), ambient) { Row(Modifier.padding(22.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)) { NativeAvatar(author.avatar, author.name, Modifier.size(64.dp))
                 Column { Text(author.name, style = MaterialTheme.typography.headlineSmall); Text("${author.blog} · 公开博文", style = MaterialTheme.typography.bodySmall) } } } }
-            error?.let { item { Text(it); GlassButton("重试", { load(true) }, backdrop = backdrop) } }
-            items(articles, key = { it.url }) { article -> ArticleGlassCard(article, false, backdrop, { open(article) }, null) }
+            error?.let { item { Text(it); GlassButton("重试", { load(true) }, backdrop = ambient) } }
+            items(articles, key = { it.url }) { article -> ArticleGlassCard(article, false, ambient, { open(article) }, null) }
             if (loading) item { CircularProgressIndicator(Modifier.size(24.dp)) }
-            if (more) item { GlassButton("加载下一页", { load(false) }, backdrop = backdrop, enabled = !loading) }
+            if (more) item { GlassButton("加载下一页", { load(false) }, backdrop = ambient, enabled = !loading) }
         }
         EdgeVeil(backdrop, true, Modifier.align(Alignment.TopCenter).fillMaxWidth().height(top + 90.dp))
         EdgeVeil(backdrop, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottom + 100.dp))

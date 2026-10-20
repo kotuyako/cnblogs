@@ -32,6 +32,7 @@ internal fun SiteSearchScreen(news: Boolean, model: GardenViewModel, login: () -
     val scope = rememberCoroutineScope()
     val service = remember { SiteSearch(model.account) }
     val backdrop = rememberGlassBackdrop()
+    val ambient = rememberGlassBackdrop()
     var input by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var tab by remember { mutableIntStateOf(if (saved) 0 else if (news) 1 else 0) }
@@ -70,16 +71,17 @@ internal fun SiteSearchScreen(news: Boolean, model: GardenViewModel, login: () -
     val top = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
     val bottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LiquidBackdrop(Modifier.fillMaxSize().recordGlassBackdrop(ambient))
         LazyColumn(Modifier.fillMaxSize().recordGlassBackdrop(backdrop).background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = top + 152.dp, bottom = bottom + 75.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (titleOnly) item { Text("仅显示标题包含关键词的结果", style = MaterialTheme.typography.bodySmall) }
             if (saved) item { Text("本机收藏 · ${shown.size} 篇文章和新闻", style = MaterialTheme.typography.bodySmall) }
             if (!saved && !model.account.state.value.loggedIn) item {
-                GlassPanel(Modifier.fillMaxWidth(), backdrop) {
+                GlassPanel(Modifier.fillMaxWidth(), ambient) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("官方站内搜索需要 API 授权；本地收藏搜索不需要登录。")
-                        GlassButton("原生授权", login, backdrop = backdrop)
+                        GlassButton("原生授权", login, backdrop = ambient)
                     }
                 }
             }
@@ -92,11 +94,11 @@ internal fun SiteSearchScreen(news: Boolean, model: GardenViewModel, login: () -
                 }
             }
             items(shown, key = { it.url }) { article ->
-                ArticleGlassCard(article, state.bookmarks.any { it.url == article.url }, backdrop,
+                ArticleGlassCard(article, state.bookmarks.any { it.url == article.url }, ambient,
                     { model.open(article) }, { model.bookmark(article) }, { onAuthor(article) })
             }
             if (loading) item { CircularProgressIndicator(Modifier.size(24.dp)) }
-            if (!saved && more) item { GlassButton("下一页", { search(true) }, backdrop = backdrop, enabled = !loading) }
+            if (!saved && more) item { GlassButton("下一页", { search(true) }, backdrop = ambient, enabled = !loading) }
         }
         EdgeVeil(backdrop, true, Modifier.align(Alignment.TopCenter).fillMaxWidth().height(top + 165.dp))
         EdgeVeil(backdrop, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottom + 80.dp))
