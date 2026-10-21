@@ -135,4 +135,13 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
         bodyJob?.cancel()
         mutable.update { it.copy(selected = null, body = null, bodyError = null, bodyLoading = false) }
     }
+
+    /** Returning from an author overlay must not clear loaded blocks and clamp the reader's scroll. */
+    fun restoreReader(snapshot: GardenState) {
+        val article = snapshot.selected
+        if (article == null) { close(); return }
+        if (snapshot.bodyLoading) { open(article); return }
+        bodyJob?.cancel()
+        mutable.update { it.copy(selected = article, body = snapshot.body, bodyError = snapshot.bodyError, bodyLoading = false) }
+    }
 }

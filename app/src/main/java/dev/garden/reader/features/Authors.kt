@@ -1,17 +1,27 @@
 package dev.garden.reader.features
 
 import dev.garden.reader.data.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import java.net.URI
 
 data class AuthorRef(val blog: String, val name: String, val avatar: String?) {
     val url: String get() = "https://www.cnblogs.com/$blog/"
     companion object {
+        private val reserved = setOf("p", "u", "users", "news", "aggsite", "pick", "articles", "tags", "tag", "archive", "sitehome", "ajax", "cate", "signin", "default.aspx")
+        fun validBlog(value: String?): String? = value?.takeIf {
+            it.matches(Regex("[A-Za-z0-9_-]{1,100}")) && it.lowercase() !in reserved
+        }
+        fun fromUrl(url: String?, name: String, avatar: String?): AuthorRef? = runCatching {
+            val uri = URI(requireNotNull(url))
+            require(uri.scheme in listOf("https", "http") && uri.host?.lowercase() in setOf("www.cnblogs.com", "cnblogs.com") &&
+                uri.userInfo == null && uri.port in listOf(-1, 80, 443) && uri.rawQuery == null && uri.rawFragment == null)
+            val blog = Regex("^/([A-Za-z0-9_-]+)/?$").matchEntire(uri.rawPath)?.groupValues?.get(1)
+            validBlog(blog)?.let { AuthorRef(it, name, avatar) }
+        }.getOrNull()
         fun from(article: Article): AuthorRef? {
+            validBlog(article.blogApp)?.let { return AuthorRef(it, article.author, article.avatar) }
             val target = CommentTarget.from(article.url)?.takeIf { !it.news } ?: return null
-            return AuthorRef(target.path.split('/')[2], article.author, article.avatar)
+            return validBlog(target.path.split('/')[2])?.let { AuthorRef(it, article.author, article.avatar) }
         }
     }
 }
@@ -40,13 +50,3 @@ object AuthorParser {
     }
 }
 
-class Authors {
-    suspend fun page(author: AuthorRef, number: Int): WebsitePage = withContext(Dispatchers.IO) {
-        val url = if (number == 1) author.url else "${author.url}?page=$number"
-        val (status, body) = PublicHttp.get(url, "www.cnblogs.com", 4 * 1024 * 1024)
-        check(status == 200) { "作者页读取失败（HTTP $status）" }
-        val parsed = AuthorParser.parse(body, author, number)
-        check(parsed.articles.isNotEmpty()) { "作者暂无公开文章，或页面结构暂不支持" }
-        parsed
-    }
-}

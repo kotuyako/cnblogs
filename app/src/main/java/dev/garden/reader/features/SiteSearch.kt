@@ -35,7 +35,8 @@ class SiteSearch(private val account: GardenAccountSession) {
                 field("PublishTime", "publishTime", "PostDate", "postDate", "DateAdded", "dateAdded").replace('T', ' ').take(19),
                 views = count("ViewTimes", "viewTimes", "ViewCount", "viewCount"),
                 likes = count("VoteTimes", "voteTimes", "DiggCount", "diggCount"),
-                comments = count("CommentTimes", "commentTimes", "CommentCount", "commentCount"))
+                comments = count("CommentTimes", "commentTimes", "CommentCount", "commentCount"),
+                blogApp = AuthorRef.validBlog(field("BlogApp", "blogApp")))
         }.distinctBy { it.url }
         check(rows.length() == 0 || result.isNotEmpty()) { "搜索结果格式暂不支持，未将其当作没有结果。" }
         return result

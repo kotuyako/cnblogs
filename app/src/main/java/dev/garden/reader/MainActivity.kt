@@ -41,6 +41,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private data class AuthorVisit(val id: Int, val author: AuthorRef, val origin: GardenState,
+    val detail: Boolean = false, val frozenDetail: GardenState? = null)
+
 @Composable
 fun GardenApp(model: GardenViewModel = viewModel(), notificationArticle: Article? = null) {
     LaunchedEffect(notificationArticle) { notificationArticle?.let(model::open) }
@@ -67,44 +70,59 @@ fun GardenApp(model: GardenViewModel = viewModel(), notificationArticle: Article
     GardenTheme(theme = state.theme, dynamicColor = state.dynamicColor) {
         var launched by rememberSaveable { mutableStateOf(false) }
         var showLogin by rememberSaveable { mutableStateOf(false) }
-        var author by remember { mutableStateOf<AuthorRef?>(null) }
-        var authorOrigin by remember { mutableStateOf<GardenState?>(null) }
-        var authorDetail by remember { mutableStateOf(false) }
-        val openAuthor: (Article) -> Unit = { article -> AuthorRef.from(article)?.let {
-            authorOrigin = state; authorDetail = false; author = it
-        } }
-        val baseState = authorOrigin ?: state
+        var visits by remember { mutableStateOf(emptyList<AuthorVisit>()) }
+        var nextVisit by remember { mutableIntStateOf(0) }
+        val openAuthorRef: (AuthorRef) -> Unit = {
+            val frozen = visits.mapIndexed { index, visit ->
+                if (index == visits.lastIndex && visit.detail) visit.copy(frozenDetail = state) else visit
+            }
+            visits = frozen + AuthorVisit(++nextVisit, it, state)
+        }
+        val openAuthor: (Article) -> Unit = { article -> AuthorRef.from(article)?.let(openAuthorRef) }
+        val baseState = visits.firstOrNull()?.origin ?: state
         LaunchedEffect(account.loggedIn) {
             if (account.loggedIn && showLogin) {
                 showLogin = false
-                state.selected?.let(model::open)
+                if (visits.isEmpty()) state.selected?.let(model::open)
             }
         }
         Box(Modifier.fillMaxSize()) {
             GardenHome(state, model, account, onLogin = { showLogin = true },
-                modifier = if (state.selected != null || author != null || showLogin) Modifier.clearAndSetSemantics { } else Modifier,
+                modifier = if (state.selected != null || visits.isNotEmpty() || showLogin) Modifier.clearAndSetSemantics { } else Modifier,
                 onAuthor = openAuthor)
             baseState.selected?.let { article ->
                 key(article.url) {
-                    PredictiveGlassLayer(onDismiss = model::close, enabled = !showLogin && author == null) { back ->
+                    PredictiveGlassLayer(onDismiss = model::close, enabled = !showLogin && visits.isEmpty()) { back ->
                         Box(if (showLogin) Modifier.clearAndSetSemantics { } else Modifier) {
                             ReaderScreen(baseState, model, back, onLogin = { showLogin = true }, onAuthor = openAuthor,
-                                visible = author == null && !showLogin && launched)
+                                visible = visits.isEmpty() && !showLogin && launched, onCommentAuthor = openAuthorRef)
                         }
                     }
                 }
             }
-            author?.let { person -> key(person.blog) {
+            visits.forEachIndexed { index, visit -> key(visit.id) {
+                val top = index == visits.lastIndex
                 PredictiveGlassLayer(onDismiss = {
-                    val origin = authorOrigin?.selected
-                    if (origin != null) model.open(origin) else model.close()
-                    author = null; authorOrigin = null; authorDetail = false
-                }, enabled = !showLogin && !authorDetail) { back ->
-                    AuthorScreen(person, { model.open(it); authorDetail = true }, back)
+                    if (top) {
+                        model.restoreReader(visit.origin)
+                        visits = visits.dropLast(1)
+                    }
+                }, enabled = top && !showLogin && !visit.detail) { back ->
+                    AuthorScreen(visit.author, model.account, {
+                        model.open(it)
+                        visits = visits.map { entry -> if (entry.id == visit.id) entry.copy(detail = true, frozenDetail = null) else entry }
+                    }, back, { showLogin = true })
                 }
-                if (authorDetail && state.selected != null) key(state.selected!!.url) {
-                    PredictiveGlassLayer(onDismiss = { authorDetail = false }, enabled = !showLogin) { back ->
-                        ReaderScreen(state, model, back, { showLogin = true }, openAuthor, !showLogin && launched)
+                val detailState = if (top) state else visit.frozenDetail
+                if (visit.detail && detailState?.selected != null) key(detailState.selected!!.url) {
+                    PredictiveGlassLayer(onDismiss = {
+                        if (top) {
+                            model.restoreReader(visit.origin)
+                            visits = visits.map { entry -> if (entry.id == visit.id) entry.copy(detail = false, frozenDetail = null) else entry }
+                        }
+                    }, enabled = top && !showLogin) { back ->
+                        ReaderScreen(detailState, model, back, { showLogin = true }, openAuthor,
+                            top && !showLogin && launched, openAuthorRef)
                     }
                 }
             } }

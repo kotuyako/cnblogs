@@ -45,7 +45,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit, onLogin: () -> Unit,
-    onAuthor: (dev.garden.reader.data.Article) -> Unit = {}, visible: Boolean = true) {
+    onAuthor: (dev.garden.reader.data.Article) -> Unit = {}, visible: Boolean = true,
+    onCommentAuthor: (dev.garden.reader.features.AuthorRef) -> Unit = {}) {
     val article = state.selected ?: return
     val account by model.account.state.collectAsStateWithLifecycle()
     val backdrop = rememberGlassBackdrop()
@@ -86,7 +87,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NativeAvatar(article.avatar, article.author, Modifier.size(42.dp)) { onAuthor(article) }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(article.author, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(article.author, Modifier.clickable { onAuthor(article) }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Text(article.published.take(25), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -112,6 +113,10 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
             if (!state.bodyLoading && state.bodyError == null && blocks.isNotEmpty()) item(key = "end") {
                 Text("— 全文完 · 内容版权归原作者所有 —", Modifier.fillMaxWidth().padding(24.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            if (!state.bodyLoading && state.bodyError == null && blocks.isNotEmpty() &&
+                dev.garden.reader.features.CommentTarget.from(article)?.news == false) item(key = "official-comments") {
+                ArticleCommentsPreview(article, model.account, { comments = true }, onLogin)
             }
         }
         EdgeVeil(backdrop, true, Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topInset + 112.dp))
@@ -151,7 +156,7 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
             }
         }
         if (comments) PredictiveGlassLayer(onDismiss = { comments = false }) { back ->
-            CommentsSheet(article, model.account, backdrop, onLogin, back)
+            CommentsSheet(article, model.account, backdrop, onLogin, back, onCommentAuthor)
         }
         if (settings) GlassSheet("阅读字号", backdrop, { settings = false }) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {

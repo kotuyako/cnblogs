@@ -128,7 +128,8 @@ class GardenAccountSession(context: Context) {
             }
             val status = connection.responseCode
             check(status !in listOf(401, 403)) { "授权无效或没有此接口权限（HTTP $status），请检查 PAT 权限；API 授权不等于网站会话。" }
-            check(status in 200..299) { "博客园接口请求未成功（HTTP $status），未确认评论已发布。" }
+            check(status in 200..299) { if (body == null) "博客园接口读取失败（HTTP $status）"
+                else "博客园接口请求未成功（HTTP $status），未确认评论已发布。" }
             connection.inputStream.use { input ->
                 val out = java.io.ByteArrayOutputStream(); val bytes = ByteArray(8192)
                 while (true) { val n = input.read(bytes); if (n < 0) break

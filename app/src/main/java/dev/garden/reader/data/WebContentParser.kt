@@ -38,7 +38,9 @@ object WebContentParser {
                 image(row.selectFirst("img.avatar, img.pfs")),
                 count(views?.attr("title").orEmpty().ifBlank { views?.text().orEmpty() }),
                 count(likes?.attr("title").orEmpty().ifBlank { likes?.text().orEmpty() }),
-                count(comments?.attr("title").orEmpty().ifBlank { comments?.text().orEmpty() }))
+                count(comments?.attr("title").orEmpty().ifBlank { comments?.text().orEmpty() }),
+                blogApp = dev.garden.reader.features.AuthorRef.fromUrl(
+                    row.selectFirst(".post-item-author, .lightblue")?.absUrl("href"), author, null)?.blog)
         }.distinctBy { it.url }.take(100)
         val next = doc.select(".pager a, .paginator a, .pagination a, a[rel=next]").firstOrNull {
             it.attr("rel") == "next" || it.text().trim() in setOf(">", "下一页", "下一页 >", "Next")

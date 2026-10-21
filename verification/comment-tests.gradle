@@ -1,0 +1,7 @@
+gradle.beforeProject { p ->
+    p.plugins.withId('com.android.application') {
+        p.android.testOptions.unitTests.includeAndroidResources = true
+        p.android.sourceSets.test.java.srcDir(p.rootProject.file('verification'))
+        p.dependencies.add('testImplementation', 'org.robolectric:robolectric:4.14.1')
+    }
+}

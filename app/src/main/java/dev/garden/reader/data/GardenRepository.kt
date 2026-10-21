@@ -146,7 +146,8 @@ class GardenRepository(context: Context, private val cookiesFor: (String) -> Str
             put(JSONObject().put("url", article.url).put("title", article.title)
                 .put("author", article.author).put("summary", article.summary).put("published", article.published)
                 .put("image", article.image ?: "").put("avatar", article.avatar ?: "")
-                .put("views", article.views).put("likes", article.likes).put("comments", article.comments))
+                .put("views", article.views).put("likes", article.likes).put("comments", article.comments)
+                .put("blogApp", article.blogApp))
         }
     }.toString()
 
@@ -159,7 +160,8 @@ class GardenRepository(context: Context, private val cookiesFor: (String) -> Str
                 item.optString("avatar").takeIf { it.isNotBlank() },
                 if (item.isNull("views")) null else item.optInt("views"),
                 if (item.isNull("likes")) null else item.optInt("likes"),
-                if (item.isNull("comments")) null else item.optInt("comments"))
+                if (item.isNull("comments")) null else item.optInt("comments"),
+                item.optString("blogApp").takeIf { it.isNotBlank() && it != "null" })
         }
     }.getOrDefault(emptyList())
 }

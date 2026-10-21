@@ -237,7 +237,8 @@ internal fun ArticleGlassCard(article: Article, saved: Boolean, backdrop: GlassB
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 NativeAvatar(article.avatar, article.author, Modifier.size(30.dp), onClick = author)
-                Text(article.author, Modifier.weight(1f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(article.author, Modifier.weight(1f).clickable(enabled = author != null) { author?.invoke() },
+                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 ArticleStatistics(article)
                 if (bookmark != null) GlassIconButton(if (saved) Icons.Outlined.BookmarkAdded else Icons.Outlined.BookmarkBorder,
                     if (saved) "取消收藏" else "收藏", bookmark, Modifier.size(38.dp), backdrop, saved)

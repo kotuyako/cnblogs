@@ -11,6 +11,7 @@ data class Article(
     val views: Int? = null,
     val likes: Int? = null,
     val comments: Int? = null,
+    val blogApp: String? = null,
 )
 
 enum class Channel(val label: String, val pageUrl: String) {

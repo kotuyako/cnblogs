@@ -10,8 +10,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import dev.garden.reader.data.Article
 
-class Comments(private val account: GardenAccountSession) {
-    suspend fun read(article: Article, target: CommentTarget, page: Int): CommentPage {
+interface CommentDataSource {
+    suspend fun read(article: Article, target: CommentTarget, page: Int): CommentPage
+    suspend fun post(target: CommentTarget, text: String)
+}
+
+class Comments(private val account: GardenAccountSession) : CommentDataSource {
+    override suspend fun read(article: Article, target: CommentTarget, page: Int): CommentPage {
+        require(page > 0)
+        if (!target.news) {
+            val rows = list(target, page)
+            return CommentPage(rows, rows.size == 10, "博客园官方评论 API")
+        }
         var publicFailure: Exception? = null
         try {
             return withContext(Dispatchers.IO) {
@@ -36,7 +46,9 @@ class Comments(private val account: GardenAccountSession) {
         return CommentPage(items, items.size == 20, "博客园官方评论 API")
     }
     suspend fun list(target: CommentTarget, page: Int): List<NativeComment> {
-        val array = JSONArray(account.apiRequest("${target.path}?pageIndex=$page&pageSize=20"))
+        val raw = account.apiRequest("${target.path}?pageIndex=$page&pageSize=${if (target.news) 20 else 10}")
+        if (!target.news) return withContext(Dispatchers.Default) { OfficialCommentParser.parse(raw) }
+        val array = JSONArray(raw)
         return (0 until array.length()).map { index ->
             val item = array.getJSONObject(index)
             fun field(vararg keys: String) = keys.firstNotNullOfOrNull {
@@ -45,14 +57,16 @@ class Comments(private val account: GardenAccountSession) {
             NativeComment(field("Id", "id", "commentID"), field("Author", "author", "userName"),
                 field("DateAdded", "dateAdded").replace('T', ' ').take(19),
                 Jsoup.parse(field("Body", "body", "commentContent")).text(),
-                WebContentParser.imageUrl(field("FaceUrl", "faceUrl"), "https://api.cnblogs.com/"))
+                WebContentParser.imageUrl(field("FaceUrl", "faceUrl"), "https://api.cnblogs.com/"),
+                field("AuthorUrl", "authorUrl").takeIf { it.isNotBlank() })
         }
     }
-    suspend fun post(target: CommentTarget, text: String) {
+    override suspend fun post(target: CommentTarget, text: String) {
         require(text.trim().length in 1..4000) { "评论长度应为 1～4000 字" }
         val body = if (target.news) JSONObject().put("ParentId", 0).put("Content", text.trim())
             else JSONObject().put("body", text.trim())
         val response = account.apiRequest(target.path, body)
+        check(response.trim() != "false") { "服务器未确认发布成功，请先刷新查看。" }
         if (response.trimStart().startsWith("{")) {
             val result = JSONObject(response)
             for (key in listOf("success", "Success", "isSuccessStatusCode", "IsSuccessStatusCode")) {
