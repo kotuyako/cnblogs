@@ -32,11 +32,8 @@ fun AuthorScreen(author: AuthorRef, account: GardenAccountSession, open: (Articl
     val model: AuthorViewModel = viewModel(key = "author:${author.blog.lowercase()}", factory = factory)
     val state by model.state.collectAsStateWithLifecycle()
     val identity by account.state.collectAsStateWithLifecycle()
-    var previousLogin by remember { mutableStateOf(identity.loggedIn) }
-    LaunchedEffect(identity.loggedIn) {
-        if (identity.loggedIn && !previousLogin) model.refresh()
-        previousLogin = identity.loggedIn
-    }
+    LaunchedEffect(identity.loggedIn, identity.revision) { model.authorizationChanged(identity.loggedIn, identity.revision) }
+    val presentation = authorProfilePresentation(state.profile, state.refreshing, state.profileError)
     val scroll = rememberLazyListState()
     val backdrop = rememberGlassBackdrop(); val ambient = rememberGlassBackdrop()
     val top = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
@@ -59,15 +56,18 @@ fun AuthorScreen(author: AuthorRef, account: GardenAccountSession, open: (Articl
                                 Text(author.blog, style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        Text(state.profile?.title ?: "博客标题暂未提供", style = MaterialTheme.typography.titleLarge)
-                        Text(state.profile?.subtitle ?: "简介暂未提供", style = MaterialTheme.typography.bodyMedium)
-                        Text(state.profile?.postCount?.let { "共 $it 篇文章" } ?: "文章总数暂未提供")
+                        Text(presentation.title, style = MaterialTheme.typography.titleLarge)
+                        Text(presentation.subtitle, style = MaterialTheme.typography.bodyMedium)
+                        Text(presentation.biography, style = MaterialTheme.typography.bodySmall)
+                        Text(presentation.count)
+                        state.profile?.blogId?.let { Text("博客 ID：$it", style = MaterialTheme.typography.bodySmall) }
+                        if (presentation.stale) Text("以上为上次成功读取的资料，本次刷新失败。", color = MaterialTheme.colorScheme.error)
                         if (state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                 } }
                 if (!identity.loggedIn) item(key = "authorize") {
                     GlassPanel(Modifier.fillMaxWidth(), ambient) { Column(Modifier.padding(20.dp)) {
-                        Text("作者官方接口需要 Bearer 授权，请使用现有原生授权。")
+                        Text("此接口需要官方认可的授权。现有 PAT 登录不保证这些旧版接口可用；不会把 Client Secret 放入 APP。")
                         GlassButton("原生授权", onLogin, backdrop = ambient)
                     } }
                 }

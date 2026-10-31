@@ -26,7 +26,7 @@ import javax.crypto.spec.GCMParameterSpec
 data class AccountState(val loggedIn: Boolean = false, val displayName: String? = null,
     val checking: Boolean = false, val message: String? = null, val avatar: String? = null,
     val gardenNumber: String? = null, val joined: String? = null, val beans: String? = null,
-    val membership: String? = null, val seniority: String? = null)
+    val membership: String? = null, val seniority: String? = null, val revision: Long = 0)
 
 /** Official PAT protocol. No browser cookies or guesses based on page markup. */
 class GardenAccountSession(context: Context) {
@@ -34,11 +34,12 @@ class GardenAccountSession(context: Context) {
     private val mutex = Mutex()
     private val mutable = MutableStateFlow(AccountState())
     val state = mutable.asStateFlow()
+    private var sessionRevision = 0L
 
     suspend fun login(raw: String) = mutex.withLock {
         val token = raw.trim()
         if (!NativeAuthPolicy.validToken(token)) {
-            mutable.value = AccountState(message = "请输入完整的 64 位个人访问令牌，不是账号密码。")
+            mutable.value = AccountState(message = "请输入完整的 64 位个人访问令牌，不是账号密码。", revision = sessionRevision)
         } else verify(token, persist = true)
     }
 
@@ -85,7 +86,8 @@ class GardenAccountSession(context: Context) {
             fun field(vararg names: String): String? = names.firstNotNullOfOrNull { name ->
                 identity.optString(name).takeIf { it.isNotBlank() && it != "null" }
             }
-            mutable.value = AccountState(true, identity.getString("displayName").take(100),
+            if (persist || !mutable.value.loggedIn) sessionRevision++
+            mutable.value = AccountState(true, identity.getString("displayName").take(100), revision = sessionRevision,
                 message = "已通过博客园 API 验证身份",
                 avatar = WebContentParser.imageUrl(field("avatar", "face").orEmpty(), "https://api.cnblogs.com/"),
                 gardenNumber = field("spaceUserId", "userNo"), joined = field("joinTime", "dateAdded", "registerTime"),
@@ -101,13 +103,13 @@ class GardenAccountSession(context: Context) {
             }.onFailure { if (it is CancellationException) throw it }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
-            mutable.value = AccountState(message = error.message ?: "连接失败，请检查网络后重试。")
+            mutable.value = AccountState(message = error.message ?: "连接失败，请检查网络后重试。", revision = sessionRevision)
         } finally { mutable.value = mutable.value.copy(checking = false) }
     }
 
     suspend fun logout() = mutex.withLock {
         withContext(Dispatchers.IO) { check(preferences.edit().clear().commit()) }
-        mutable.value = AccountState(message = "已退出，设备上的授权令牌已清除")
+        mutable.value = AccountState(message = "已退出，设备上的授权令牌已清除", revision = ++sessionRevision)
     }
 
     /** Exact official host only; redirects disabled so bearer credentials never follow a Location. */
@@ -127,9 +129,7 @@ class GardenAccountSession(context: Context) {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val status = connection.responseCode
-            check(status !in listOf(401, 403)) { "授权无效或没有此接口权限（HTTP $status），请检查 PAT 权限；API 授权不等于网站会话。" }
-            check(status in 200..299) { if (body == null) "博客园接口读取失败（HTTP $status）"
-                else "博客园接口请求未成功（HTTP $status），未确认评论已发布。" }
+            if (status !in 200..299) throw ApiRequestFailure.from(status, connection.errorStream)
             connection.inputStream.use { input ->
                 val out = java.io.ByteArrayOutputStream(); val bytes = ByteArray(8192)
                 while (true) { val n = input.read(bytes); if (n < 0) break

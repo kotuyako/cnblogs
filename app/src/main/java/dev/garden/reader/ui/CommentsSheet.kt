@@ -33,7 +33,7 @@ private fun commentsModel(article: Article, account: GardenAccountSession): Comm
     } }
     val model: CommentsViewModel = viewModel(key = "comments:${article.blogApp}:${article.url}", factory = factory)
     val identity by account.state.collectAsStateWithLifecycle()
-    LaunchedEffect(identity.loggedIn) { model.start(identity.loggedIn) }
+    LaunchedEffect(identity.loggedIn, identity.revision) { model.start(identity.loggedIn, identity.revision) }
     return model
 }
 
@@ -54,7 +54,7 @@ internal fun ArticleCommentsPreview(article: Article, account: GardenAccountSess
                 Text(item.body, maxLines = 3, style = MaterialTheme.typography.bodyMedium)
             }
             GlassButton("查看全部 / 写评论", open)
-            if (!identity.loggedIn) GlassButton("登录后读取和发表评论", login)
+            if (!identity.loggedIn) GlassButton("查看原生授权及接口权限", login)
         }
     }
 }
@@ -107,7 +107,7 @@ internal fun CommentsSheet(article: Article, account: GardenAccountSession, back
             } }
             if (!identity.loggedIn && target != null) item {
                 GlassPanel(Modifier.fillMaxWidth(), backdrop) { Column(Modifier.padding(20.dp)) {
-                    Text("博文评论读取与发布需要官方授权及对应权限；不会改用网页爬取。")
+                    Text("接口需要认可的授权及对应权限。PAT 账号登录成功不代表旧版评论接口接受该 PAT；不会改用网页爬取。")
                     GlassButton("原生登录授权", onLogin, backdrop = backdrop)
                 } }
             }

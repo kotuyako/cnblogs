@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        runCatching { dev.garden.reader.features.ArticleNotifications.restore(this) }
         readNotification(intent)
         setContent { GardenApp(notificationArticle = notificationArticle) }
     }
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private fun readNotification(intent: Intent) {
         val url = intent.getStringExtra("article_url") ?: return
         if (!ContentParser.isCnblogsUrl(url) || !url.startsWith("https://")) return
+        dev.garden.reader.features.NotificationHistory.get(this).markRead(url)
         notificationArticle = Article(url, intent.getStringExtra("article_title")?.take(500) ?: "博客园文章", "博客园", "", "")
     }
 }
@@ -67,7 +69,7 @@ fun GardenApp(model: GardenViewModel = viewModel(), notificationArticle: Article
             activity?.window?.isNavigationBarContrastEnforced = false
         }
     }
-    GardenTheme(theme = state.theme, dynamicColor = state.dynamicColor) {
+    GardenTheme(theme = state.theme, dynamicColor = state.dynamicColor, pureBlack = state.pureBlack) {
         var launched by rememberSaveable { mutableStateOf(false) }
         var showLogin by rememberSaveable { mutableStateOf(false) }
         var visits by remember { mutableStateOf(emptyList<AuthorVisit>()) }

@@ -43,7 +43,7 @@ internal fun NotificationPreferences(backdrop: GlassBackdrop) {
     var message by remember { mutableStateOf<String?>(null) }
     fun enable(value: Boolean) {
         runCatching { ArticleNotifications.setEnabled(context, value) }
-            .onSuccess { enabled = ArticleNotifications.enabled(context); message = if (value) "已安排后台检查，首次运行只记录基线，不推送历史文章。" else "已关闭后台检查。" }
+            .onSuccess { enabled = ArticleNotifications.enabled(context); message = if (value) "已启动检查，首次成功建立基线，不推送历史文章。下方可查看状态及新文章记录。" else "已关闭后台检查，保留已有通知记录。" }
             .onFailure { message = it.message; enabled = ArticleNotifications.enabled(context) }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->

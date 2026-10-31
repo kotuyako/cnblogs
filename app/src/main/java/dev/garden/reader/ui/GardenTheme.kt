@@ -66,7 +66,7 @@ private val GardenTypography = Typography().let { base ->
 
 /** Monet uses the system wallpaper palette on Android 12+, with a complete older-device palette. */
 @Composable
-fun GardenTheme(theme: String, dynamicColor: Boolean, content: @Composable () -> Unit) {
+fun GardenTheme(theme: String, dynamicColor: Boolean, pureBlack: Boolean = false, content: @Composable () -> Unit) {
     val dark = when (theme) {
         "light" -> false
         "dark" -> true
@@ -92,10 +92,14 @@ fun GardenTheme(theme: String, dynamicColor: Boolean, content: @Composable () ->
         }
         onDispose { if (!preview) { lifecycle.removeObserver(observer); context.unregisterReceiver(receiver) } }
     }
-    val colors = remember(context, configuration, paletteRevision, dark, dynamicColor) {
-        if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val colors = remember(context, configuration, paletteRevision, dark, dynamicColor, pureBlack) {
+        val palette = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         } else if (dark) GardenDark else GardenLight
+        if (dark && pureBlack) palette.copy(background = Color.Black, surface = Color.Black,
+            surfaceDim = Color.Black, surfaceBright = Color(0xFF202020), surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color(0xFF090909), surfaceContainer = Color(0xFF121212),
+            surfaceContainerHigh = Color(0xFF1A1A1A), surfaceContainerHighest = Color(0xFF242424)) else palette
     }
     MaterialTheme(colorScheme = colors, typography = GardenTypography) {
         androidx.compose.runtime.CompositionLocalProvider(

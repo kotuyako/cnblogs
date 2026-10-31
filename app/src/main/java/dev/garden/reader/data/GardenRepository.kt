@@ -3,6 +3,7 @@ package dev.garden.reader.data
 import android.content.Context
 import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,6 +20,9 @@ import java.security.MessageDigest
 class GardenRepository(context: Context, private val cookiesFor: (String) -> String? = { null }) {
     private val preferences = context.getSharedPreferences("garden", Context.MODE_PRIVATE)
     private val bodyDirectory = File(context.filesDir, "articles").apply { mkdirs() }
+    private fun bodyKey(url: String, legacy: Boolean = false): String = MessageDigest.getInstance("SHA-256")
+        .digest((if (legacy) url else "native-body-v2:$url").toByteArray())
+        .joinToString("") { "%02x".format(it) }
     private val nextPages = java.util.concurrent.ConcurrentHashMap<Channel, String>()
     fun hasMore(channel: Channel) = nextPages.containsKey(channel)
 
@@ -31,11 +35,33 @@ class GardenRepository(context: Context, private val cookiesFor: (String) -> Str
     var dynamicColor: Boolean
         get() = preferences.getBoolean("dynamic_color", true)
         set(value) { preferences.edit().putBoolean("dynamic_color", value).apply() }
+    var pureBlack: Boolean
+        get() = preferences.getBoolean("pure_black", false)
+        set(value) { preferences.edit().putBoolean("pure_black", value).apply() }
 
     fun cached(channel: Channel): List<Article> = decode(preferences.getString("website_${channel.name}", "[]")!!)
     fun bookmarks(): List<Article> = decode(preferences.getString("bookmarks", "[]")!!)
     fun saveBookmarks(articles: List<Article>) {
         preferences.edit().putString("bookmarks", encode(articles)).apply()
+    }
+
+    /** Search only saved items and previously read, public body cache; never starts a network request. */
+    suspend fun cachedBookmarkedText(items: List<Article>): Map<String, String> = withContext(Dispatchers.IO) {
+        buildMap {
+            items.distinctBy { it.url }.forEach { article ->
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val file = File(bodyDirectory, "${bodyKey(article.url)}.html").takeIf { it.isFile }
+                    ?: File(bodyDirectory, "${bodyKey(article.url, legacy = true)}.html")
+                if (file.isFile && file.length() <= 4 * 1024 * 1024) {
+                    val text = runCatching {
+                        val document = org.jsoup.Jsoup.parse(file.readText(Charsets.UTF_8))
+                        document.select("script, style").remove()
+                        document.text()
+                    }.getOrNull()
+                    if (!text.isNullOrBlank()) put(article.url, text)
+                }
+            }
+        }
     }
 
     suspend fun refresh(channel: Channel, onInitial: (List<Article>) -> Unit = {}): List<Article> = withContext(Dispatchers.IO) {
@@ -73,8 +99,7 @@ class GardenRepository(context: Context, private val cookiesFor: (String) -> Str
     }
 
     suspend fun body(article: Article): String = withContext(Dispatchers.IO) {
-        val key = MessageDigest.getInstance("SHA-256").digest(article.url.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+        val key = bodyKey(article.url)
         val file = AtomicFile(File(bodyDirectory, "$key.html"))
         runCatching { file.openRead().bufferedReader().use { it.readText() } }
             .getOrNull()?.takeIf { it.isNotBlank() }?.let { return@withContext it }

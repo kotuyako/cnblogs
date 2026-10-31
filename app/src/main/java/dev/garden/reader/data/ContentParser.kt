@@ -27,11 +27,20 @@ object ContentParser {
     fun cleanBody(html: String, url: String): String {
         val body = Jsoup.parseBodyFragment(html, url).body()
         val allow = Safelist.relaxed().addTags("hr").addAttributes("code", "class").addAttributes("pre", "class")
+            .addAttributes("h1", "id").addAttributes("h2", "id").addAttributes("h3", "id")
+            .addAttributes("h4", "id").addAttributes("h5", "id").addAttributes("h6", "id")
+            .addAttributes("a", "id", "name").addAttributes("p", "id").addAttributes("div", "id")
+            .preserveRelativeLinks(true)
             .removeProtocols("img", "src", "http").addProtocols("img", "src", "https")
         body.select("img").forEach {
             val source = it.attr("data-original").ifBlank { it.attr("data-src") }.ifBlank { it.attr("src") }
             it.attr("src", runCatching { URI(url).resolve(source).toString() }.getOrDefault("")
                 .replaceFirst("http://", "https://"))
+        }
+        // Preserve local fragments for native TOC links, but keep all other links absolute.
+        body.select("a[href]").forEach { link ->
+            val href = link.attr("href")
+            if (!href.startsWith("#")) link.attr("href", runCatching { URI(url).resolve(href).toString() }.getOrDefault(""))
         }
         return Jsoup.clean(body.html(), url, allow)
     }

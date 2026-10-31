@@ -22,7 +22,16 @@ class AuthorViewModel(private val author: AuthorRef, private val repository: Aut
     val state = mutable.asStateFlow()
     private var job: Job? = null
     private var generation = 0
+    private var authorization: Pair<Boolean, Long>? = null
     init { refresh() }
+    fun authorizationChanged(loggedIn: Boolean, revision: Long) {
+        val next = loggedIn to revision
+        if (authorization != next) {
+            val hadSession = authorization != null
+            authorization = next
+            if (hadSession || !state.value.refreshing) refresh()
+        }
+    }
     private suspend fun <T> attempt(block: suspend () -> T): Result<T> = try { Result.success(block()) }
         catch (c: CancellationException) { throw c } catch (e: Exception) { Result.failure(e) }
     fun refresh() {

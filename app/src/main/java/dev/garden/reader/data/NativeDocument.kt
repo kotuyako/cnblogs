@@ -8,7 +8,8 @@ import org.jsoup.nodes.TextNode
 data class NativeSpan(val text: String, val bold: Boolean = false, val italic: Boolean = false,
     val code: Boolean = false, val link: String? = null)
 data class NativeBlock(val kind: String, val spans: List<NativeSpan> = emptyList(),
-    val level: Int = 0, val source: String? = null, val caption: String = "", val language: String = "") {
+    val level: Int = 0, val source: String? = null, val caption: String = "", val language: String = "",
+    val anchor: String? = null) {
     val text: String get() = spans.joinToString("") { it.text }
 }
 
@@ -17,8 +18,12 @@ object NativeDocument {
     fun parse(html: String): List<NativeBlock> {
         val result = mutableListOf<NativeBlock>()
         val pending = mutableListOf<NativeSpan>()
+        var pendingAnchor: String? = null
         fun flush(kind: String = "paragraph", level: Int = 0) {
-            if (pending.any { it.text.isNotBlank() }) result += NativeBlock(kind, pending.toList(), level)
+            if (pending.any { it.text.isNotBlank() }) {
+                result += NativeBlock(kind, pending.toList(), level, anchor = pendingAnchor)
+                pendingAnchor = null
+            }
             pending.clear()
         }
         fun walk(node: Node, bold: Boolean = false, italic: Boolean = false, code: Boolean = false, link: String? = null) {
@@ -53,7 +58,10 @@ object NativeDocument {
                     val block = heading || tag in setOf("p", "div", "section", "article", "ul", "ol", "li", "blockquote", "figure", "figcaption")
                     if (block) flush()
                     if (tag == "li") pending += NativeSpan("•  ")
-                    val nextLink = if (tag == "a") ContentParser.safeWebUrl(node.attr("href")) else link
+                    node.id().ifBlank { node.attr("name") }.takeIf { it.isNotBlank() && pendingAnchor == null }?.let { pendingAnchor = it }
+                    val href = node.attr("href")
+                    val nextLink = if (tag == "a") href.takeIf { it.startsWith("#") && it.length > 1 }
+                        ?: ContentParser.safeWebUrl(href) else link
                     node.childNodes().forEach { walk(it, bold || tag in setOf("b", "strong"),
                         italic || tag in setOf("i", "em"), code || tag == "code", nextLink) }
                     if (block) flush(if (heading) "heading" else if (tag == "blockquote") "quote" else "paragraph",

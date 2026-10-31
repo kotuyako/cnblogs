@@ -1,6 +1,7 @@
 package dev.garden.reader.features
 
 import dev.garden.reader.account.GardenAccountSession
+import dev.garden.reader.account.ApiRequestFailure
 import dev.garden.reader.data.WebContentParser
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,32 +19,42 @@ interface CommentDataSource {
 class Comments(private val account: GardenAccountSession) : CommentDataSource {
     override suspend fun read(article: Article, target: CommentTarget, page: Int): CommentPage {
         require(page > 0)
-        if (!target.news) {
-            val rows = list(target, page)
-            return CommentPage(rows, rows.size == 10, "博客园官方评论 API")
+        // PAT and a website session are separate credentials. Never send PAT/cookies to public URLs.
+        var officialFailure: Exception? = null
+        if (account.state.value.loggedIn) {
+            try {
+                val rows = list(target, page)
+                return CommentPage(rows, rows.size == if (target.news) 20 else 10, "博客园官方评论 API")
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: ApiRequestFailure) {
+                if (error.status !in listOf(401, 403)) throw error
+                officialFailure = error
+            }
         }
-        var publicFailure: Exception? = null
         try {
             return withContext(Dispatchers.IO) {
-                val id = target.path.split('/').let { if (target.news) it[2] else it[4] }
-                val host = if (target.news) "news.cnblogs.com" else "www.cnblogs.com"
-                val url = if (target.news) "https://$host/CommentAjax/GetComments?contentId=$id" else {
-                    val blog = target.path.split('/')[2]
-                    "https://$host/$blog/ajax/comments-block?postId=$id&loadCommentBox=false" + if (page > 1) "&pageIndex=$page" else ""
+                if (!target.news) {
+                    val (status, raw) = PublicHttp.get(PublicCommentProtocol.blogUrl(target, page), "www.cnblogs.com")
+                    check(status == 200) { "博客园网页评论接口 HTTP $status；未读取评论。" }
+                    PublicCommentProtocol.blog(raw, article.url, page)
+                } else {
+                    val id = PublicCommentProtocol.newsId(target)
+                    val (status, raw) = PublicHttp.get("https://news.cnblogs.com/CommentAjax/GetComments?contentId=$id", "news.cnblogs.com")
+                    check(status == 200) { "博客园新闻网页评论接口 HTTP $status；未读取评论。" }
+                    val permissionHtml = if (PublicCommentParser.parse(raw, article.url).isEmpty()) {
+                        val (permissionStatus, html) = PublicHttp.get("https://news.cnblogs.com/NewsAjax/LoadDetailommentInfo?newsId=$id", "news.cnblogs.com")
+                        html.takeIf { permissionStatus == 200 }
+                    } else null
+                    PublicCommentProtocol.news(raw, article.url, permissionHtml)
                 }
-                val (status, raw) = PublicHttp.get(url, host)
-                check(status == 200) { "公开评论接口 HTTP $status" }
-                val json = if (!target.news) JSONObject(raw) else null
-                val html = json?.optString("comments") ?: raw
-                val count = json?.optInt("commentCount", -1) ?: (article.comments ?: -1)
-                val items = PublicCommentParser.parse(html, article.url)
-                check(items.isNotEmpty() || count == 0) { "公开接口未返回评论正文，不能判断为暂无评论" }
-                CommentPage(items, !target.news && items.isNotEmpty() && (count < 0 || page * items.size < count), "博客园网页公开评论")
             }
-        } catch (c: CancellationException) { throw c } catch (e: Exception) { publicFailure = e }
-        if (!account.state.value.loggedIn) error("${publicFailure?.message}。可授权后尝试官方评论 API；不会将接口受限显示成暂无评论。")
-        val items = list(target, page)
-        return CommentPage(items, items.size == 20, "博客园官方评论 API")
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            val apiStatus = (officialFailure as? ApiRequestFailure)?.status
+            // Preserve the website's clear login gate instead of replacing it with a generic API error.
+            if (apiStatus != null) throw PublicCommentFailure("${error.message ?: "网页评论读取失败"} 官方评论 API 也返回 HTTP $apiStatus，现有授权未被接受。")
+            throw error
+        }
     }
     suspend fun list(target: CommentTarget, page: Int): List<NativeComment> {
         val raw = account.apiRequest("${target.path}?pageIndex=$page&pageSize=${if (target.news) 20 else 10}")

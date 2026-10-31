@@ -22,9 +22,10 @@ class CommentsViewModel(private val article: Article, private val repository: Co
     val state = mutable.asStateFlow()
     private var readJob: Job? = null
     private var generation = 0
-    private var authorization: Boolean? = null
-    fun start(loggedIn: Boolean) {
-        if (authorization != loggedIn) { authorization = loggedIn; refresh() }
+    private var authorization: Pair<Boolean, Long>? = null
+    fun start(loggedIn: Boolean, revision: Long = 0) {
+        val next = loggedIn to revision
+        if (authorization != next) { authorization = next; refresh() }
         else if (state.value.page == 0 && !state.value.loading && state.value.error == null) refresh()
     }
     fun draft(value: String) { if (!state.value.posting && value.length <= 4000) mutable.update { it.copy(draft = value) } }

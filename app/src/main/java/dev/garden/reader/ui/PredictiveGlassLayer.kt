@@ -45,7 +45,6 @@ fun PredictiveGlassLayer(
 ) {
     val progress = remember { Animatable(0f) }
     val entrance = remember { Animatable(0f) }
-    var edge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
     val transition = remember { BackTransition() }
     val scope = rememberCoroutineScope()
     val dismiss by rememberUpdatedState(onDismiss)
@@ -65,7 +64,6 @@ fun PredictiveGlassLayer(
     }
     val back: () -> Unit = {
         if (active && !transition.closing) {
-            edge = BackEventCompat.EDGE_LEFT
             commit(transition.begin())
         }
     }
@@ -90,7 +88,6 @@ fun PredictiveGlassLayer(
             events.collect { event ->
                 // A button press or a newer gesture must never be undone by this old flow.
                 if (transition.generation != generation) throw CancellationException()
-                edge = event.swipeEdge
                 progress.snapTo(event.progress.coerceIn(0f, 1f))
             }
             if (transition.generation == generation && active) commit(generation)
@@ -113,7 +110,9 @@ fun PredictiveGlassLayer(
             val arriving = 1f - entrance.value.coerceIn(0f, 1f)
             scaleX = 1f - fraction * .02f
             scaleY = scaleX
-            translationX = size.width * (arriving + fraction * if (edge == BackEventCompat.EDGE_LEFT) 1f else -1f)
+            // Both system gesture edges return to the previous (left-hand) destination.
+            // A right-edge gesture must not reverse the navigation stack's slide direction.
+            translationX = size.width * (arriving + fraction)
             shape = RoundedCornerShape((24f * maxOf(fraction, arriving)).dp)
             clip = fraction > 0f || arriving > 0f
             shadowElevation = 18.dp.toPx() * maxOf(fraction, arriving)

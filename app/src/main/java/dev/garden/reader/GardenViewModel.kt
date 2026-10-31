@@ -22,6 +22,7 @@ data class GardenState(
     val error: String? = null,
     val theme: String = "system",
     val dynamicColor: Boolean = true,
+    val pureBlack: Boolean = false,
     val fontSize: Float = 18f,
     val selected: Article? = null,
     val body: String? = null,
@@ -36,7 +37,7 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = GardenRepository(application)
     private val mutable = MutableStateFlow(GardenState(
         articles = repository.cached(Channel.HOME), bookmarks = repository.bookmarks(),
-        theme = repository.theme, fontSize = repository.fontSize, dynamicColor = repository.dynamicColor,
+        theme = repository.theme, fontSize = repository.fontSize, dynamicColor = repository.dynamicColor, pureBlack = repository.pureBlack,
     ))
     val state = mutable.asStateFlow()
     private var feedJob: Job? = null
@@ -45,6 +46,11 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     init { refresh(); refreshAccount() }
 
     fun refreshAccount() { viewModelScope.launch { account.refresh() } }
+
+    fun pureBlack(enabled: Boolean) {
+        repository.pureBlack = enabled
+        mutable.update { it.copy(pureBlack = enabled) }
+    }
 
     fun logout() {
         viewModelScope.launch {
@@ -85,6 +91,8 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
         repository.saveBookmarks(updated)
         mutable.update { it.copy(bookmarks = updated) }
     }
+
+    suspend fun cachedBookmarkedText(): Map<String, String> = repository.cachedBookmarkedText(state.value.bookmarks)
 
     fun more() {
         if (state.value.loading || state.value.loadingMore || !state.value.hasMore) return

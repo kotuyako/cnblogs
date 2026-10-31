@@ -21,16 +21,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.withLink
+import dev.garden.reader.features.ReaderNavigation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.garden.reader.GardenState
@@ -53,15 +55,15 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
     val scroll = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
+    val density = LocalDensity.current
+    val chapterOffset = with(density) { -(WindowInsets.statusBars.getTop(this) + 78.dp.roundToPx()) }
     var toc by remember { mutableStateOf(false) }
-    var settings by remember { mutableStateOf(false) }
     var comments by remember { mutableStateOf(false) }
     var chrome by remember { mutableStateOf(true) }
     val blocks by produceState<List<NativeBlock>>(emptyList(), state.body) {
         value = withContext(Dispatchers.Default) { state.body?.let(NativeDocument::parse).orEmpty() }
     }
-    TrackReading(article.url, visible && !state.bodyLoading && state.bodyError == null && blocks.isNotEmpty() && !toc && !settings && !comments)
+    TrackReading(article.url, visible && !state.bodyLoading && state.bodyError == null && blocks.isNotEmpty() && !toc && !comments)
     LaunchedEffect(scroll) {
         var previous = 0
         snapshotFlow { scroll.firstVisibleItemIndex * 100000 + scroll.firstVisibleItemScrollOffset }.collect { current ->
@@ -108,7 +110,17 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
                 }
             } }
             itemsIndexed(blocks, key = { index, _ -> "block-$index" }) { _, block ->
-                NativeArticleBlock(block, state.fontSize, Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp))
+                NativeArticleBlock(block, state.fontSize, Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) { link ->
+                    val target = ReaderNavigation.target(link, article.url, blocks)
+                    if (target != null) {
+                        scope.launch { scroll.animateScrollToItem(target, chapterOffset) }
+                    } else if (link.startsWith("#")) {
+                        android.widget.Toast.makeText(context, "正文没有提供该章节锚点", android.widget.Toast.LENGTH_SHORT).show()
+                    } else dev.garden.reader.data.ContentParser.safeWebUrl(link)?.let { url ->
+                        // Explicitly tapped ordinary links use the system; no WebView is embedded.
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+                    }
+                }
             }
             if (!state.bodyLoading && state.bodyError == null && blocks.isNotEmpty()) item(key = "end") {
                 Text("— 全文完 · 内容版权归原作者所有 —", Modifier.fillMaxWidth().padding(24.dp),
@@ -145,34 +157,24 @@ fun ReaderScreen(state: GardenState, model: GardenViewModel, onBack: () -> Unit,
         }
         if (toc) GlassSheet("文章目录", backdrop, { toc = false }) {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 390.dp)) {
-                item { GlassButton("回到标题", { toc = false; scope.launch { scroll.animateScrollToItem(0) } }, backdrop = backdrop) }
+                if (blocks.none { it.kind == "heading" }) item {
+                    Text("这篇文章没有章节标题", Modifier.padding(vertical = 18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 blocks.forEachIndexed { index, block -> if (block.kind == "heading") item {
                     Text(block.text, Modifier.fillMaxWidth().clickable {
-                        toc = false; scope.launch { scroll.animateScrollToItem(index + 1) }
+                        toc = false; scope.launch { scroll.animateScrollToItem(ReaderNavigation.blockItem(index), chapterOffset) }
                     }.padding(start = ((block.level - 1) * 10).dp, top = 14.dp, bottom = 14.dp))
                 } }
-                item { GlassButton("复制原文链接", { clipboard.setText(AnnotatedString(article.url)); toc = false }, backdrop = backdrop) }
-                item { GlassButton("阅读字号", { toc = false; settings = true }, backdrop = backdrop) }
             }
         }
         if (comments) PredictiveGlassLayer(onDismiss = { comments = false }) { back ->
             CommentsSheet(article, model.account, backdrop, onLogin, back, onCommentAuthor)
         }
-        if (settings) GlassSheet("阅读字号", backdrop, { settings = false }) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    GlassButton("−", { model.fontSize((state.fontSize - 2).coerceAtLeast(14f)) }, backdrop = backdrop, enabled = state.fontSize > 14)
-                    Text("${state.fontSize.toInt()} sp")
-                    GlassButton("+", { model.fontSize((state.fontSize + 2).coerceAtMost(26f)) }, backdrop = backdrop, enabled = state.fontSize < 26)
-                }
-                Text("保持好奇，持续分享。", fontSize = state.fontSize.sp)
-            }
-        }
     }
 }
 
 @Composable
-internal fun NativeArticleBlock(block: NativeBlock, fontSize: Float, modifier: Modifier) {
+internal fun NativeArticleBlock(block: NativeBlock, fontSize: Float, modifier: Modifier, onLink: ((String) -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     if (block.kind == "code") { NativeCodeBlock(block, fontSize, modifier); return }
     if (block.kind == "image") {
@@ -182,11 +184,14 @@ internal fun NativeArticleBlock(block: NativeBlock, fontSize: Float, modifier: M
     if (block.kind == "rule") { HorizontalDivider(modifier.padding(vertical = 12.dp)); return }
     val text = buildAnnotatedString {
         block.spans.forEach { span ->
-            withStyle(SpanStyle(fontWeight = if (span.bold) FontWeight.Bold else null,
+            val style = SpanStyle(fontWeight = if (span.bold) FontWeight.Bold else null,
                 fontStyle = if (span.italic) FontStyle.Italic else null,
                 fontFamily = if (span.code) FontFamily.Monospace else null,
                 color = if (span.link != null) colors.primary else Color.Unspecified,
-                background = if (span.code) colors.surfaceContainer else Color.Unspecified)) { append(span.text) }
+                background = if (span.code) colors.surfaceContainer else Color.Unspecified)
+            if (span.link != null && onLink != null) {
+                withLink(LinkAnnotation.Clickable(span.link, TextLinkStyles(style = style), { onLink(span.link) })) { append(span.text) }
+            } else withStyle(style) { append(span.text) }
         }
     }
     val code = block.kind in setOf("code", "table")

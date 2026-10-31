@@ -43,7 +43,7 @@ object WebContentParser {
                     row.selectFirst(".post-item-author, .lightblue")?.absUrl("href"), author, null)?.blog)
         }.distinctBy { it.url }.take(100)
         val next = doc.select(".pager a, .paginator a, .pagination a, a[rel=next]").firstOrNull {
-            it.attr("rel") == "next" || it.text().trim() in setOf(">", "下一页", "下一页 >", "Next")
+            it.attr("rel") == "next" || it.text().trim() in setOf(">", "下一页", "下一页 >", "Next", "Next >")
         }?.let { imageUrl(it.attr("href"), url) }?.takeIf {
             val current = URI(url); val target = URI(it)
             target.host == current.host && target.scheme == "https" && target.userInfo == null && it != url

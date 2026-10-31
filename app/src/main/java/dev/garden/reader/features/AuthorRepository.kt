@@ -9,16 +9,26 @@ import org.jsoup.Jsoup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class AuthorProfile(val title: String?, val subtitle: String?, val postCount: Int?, val pageSize: Int?)
+/** subtitle is a blog subtitle, never a user biography. Counts only come from this API. */
+data class AuthorProfile(val title: String?, val subtitle: String?, val postCount: Int?, val pageSize: Int?, val blogId: Long? = null)
 
 /** Keys follow https://api.cnblogs.com/help; unknown envelopes are errors, not empty lists. */
 object AuthorApiParser {
     fun profile(raw: String): AuthorProfile {
         val value = JSONObject(raw)
-        check(listOf("blogId", "title", "subtitle", "postCount", "pageSize").any(value::has)) { "作者资料接口返回了未知 JSON 结构" }
+        check(!value.has("error") && value.optInt("status", 200) < 400 &&
+            listOf("blogId", "subtitle", "postCount", "pageSize").any(value::has)) { "作者资料接口返回了错误或未知 JSON 结构" }
         fun text(key: String) = value.opt(key)?.takeIf { it is String }?.toString()?.takeIf { it.isNotBlank() }?.let { Jsoup.parse(it).text() }
-        fun number(key: String) = (value.opt(key) as? Number)?.toInt()?.takeIf { it >= 0 }
-        return AuthorProfile(text("title"), text("subtitle"), number("postCount"), number("pageSize")?.takeIf { it > 0 })
+        fun number(key: String): Int? {
+            if (!value.has(key) || value.isNull(key)) return null
+            val number = (value.opt(key) as? Number)?.toDouble()
+            check(number != null && number.isFinite() && number >= 0 && number <= Int.MAX_VALUE && number == kotlin.math.floor(number)) {
+                "博客 $key 格式异常，未生成占位数值"
+            }
+            return number.toInt()
+        }
+        return AuthorProfile(text("title"), text("subtitle"), number("postCount"), number("pageSize")?.takeIf { it > 0 },
+            number("blogId")?.toLong())
     }
     fun posts(raw: String, author: AuthorRef): List<Article> {
         val rows = JSONArray(raw)
